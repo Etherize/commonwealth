@@ -95,7 +95,8 @@ const OffchainNavigationModule: m.Component<{ sidebarTopic: number }, { dragulaI
 
     const onDiscussionsPage = (p) => p === `/${app.activeId()}` || p === `/${app.activeId()}/`
       || p.startsWith(`/${app.activeId()}/discussions/`)
-      || p.startsWith(`/${app.activeId()}/proposal/discussions/`);
+      || p.startsWith(`/${app.activeId()}/proposal/discussions/`)
+      || p.startsWith(`/${app.activeId()}?`);
     const onSearchPage = (p) => p.startsWith(`/${app.activeId()}/search`);
     const onMembersPage = (p) => p.startsWith(`/${app.activeId()}/members`);
     const onChatPage = (p) => p === `/${app.activeId()}/chat`;

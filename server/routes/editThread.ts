@@ -15,7 +15,7 @@ export const Errors = {
 };
 
 const editThread = async (models, req: Request, res: Response, next: NextFunction) => {
-  const { body, title, kind, thread_id, version_history, } = req.body;
+  const { body, title, kind, stage, thread_id, version_history, } = req.body;
 
   if (!thread_id) {
     return next(new Error(Errors.NoThreadId));
@@ -57,6 +57,7 @@ const editThread = async (models, req: Request, res: Response, next: NextFunctio
     arr.unshift(version_history);
     thread.version_history = arr;
     thread.body = body;
+    thread.stage = stage;
     thread.plaintext = (() => {
       try {
         return renderQuillDeltaToText(JSON.parse(decodeURIComponent(body)));

@@ -8,8 +8,8 @@ import moment from 'moment-twitter';
 import app from 'state';
 
 import { Spinner, Icons, Icon, PopoverMenu, MenuItem } from 'construct-ui';
-import { pluralize } from 'helpers';
-import { NodeInfo, CommunityInfo } from 'models';
+import { pluralize, offchainThreadStageToLabel } from 'helpers';
+import { NodeInfo, CommunityInfo, OffchainThreadStage } from 'models';
 
 import { updateLastVisited } from 'controllers/app/login';
 import { notifyError } from 'controllers/app/notifications';
@@ -53,6 +53,44 @@ const getLastSeenDivider = (hasText = true) => {
   ]);
 };
 
+const DiscussionStagesBar: m.Component<{ topic: string, stage: string }, {}> = {
+  view: (vnode) => {
+    const { topic, stage } = vnode.attrs;
+    return m('.DiscussionStagesBar', [
+      m('a.discussions-stage', {
+        // class: stage ? '' : 'active',
+        href: topic ? `/${app.activeId()}/discussions/${encodeURI(topic.trim())}` : `/${app.activeId()}`,
+        onclick: (e) => {
+          e.preventDefault();
+          m.route.set(topic ? `/${app.activeId()}/discussions/${encodeURI(topic.trim())}` : `/${app.activeId()}`);
+        }
+      }, 'Stages:'),
+      [
+        OffchainThreadStage.Discussion,
+        OffchainThreadStage.DraftProposal,
+        OffchainThreadStage.Voting,
+        OffchainThreadStage.Passed,
+        OffchainThreadStage.Failed,
+      ].map((targetStage) => m('a.discussions-stage', {
+        class: stage === targetStage ? 'active' : '',
+        href: topic
+          ? `/${app.activeId()}/discussions/${encodeURI(topic.trim())}?stage=${targetStage}`
+          : `/${app.activeId()}?stage=${targetStage}`,
+        onclick: (e) => {
+          e.preventDefault();
+          m.route.set(
+            topic
+              ? `/${app.activeId()}/discussions/${encodeURI(topic.trim())}?stage=${targetStage}`
+              : `/${app.activeId()}?stage=${targetStage}`
+          );
+        }
+      }, [
+        offchainThreadStageToLabel(targetStage)
+      ])),
+    ]);
+  }
+};
+
 const DiscussionsPage: m.Component<{ topic?: string }, IDiscussionPageState> = {
   oncreate: (vnode) => {
     mixpanel.track('PageVisit', {
@@ -93,6 +131,8 @@ const DiscussionsPage: m.Component<{ topic?: string }, IDiscussionPageState> = {
       showNewProposalButton: true,
     });
     const subpage = topic || ALL_PROPOSALS_KEY;
+
+    const stage = m.route.param('stage');
 
     // add chain compatibility (node info?)
     if (!activeEntity?.serverLoaded) return m(PageLoading, {
@@ -230,6 +270,7 @@ const DiscussionsPage: m.Component<{ topic?: string }, IDiscussionPageState> = {
         communityId: app.activeCommunityId(),
         cutoffDate: vnode.state.lookback[subpage],
         topicId,
+        stage,
       };
 
       if (!vnode.state.topicInitialized[subpage]) {
@@ -290,10 +331,9 @@ const DiscussionsPage: m.Component<{ topic?: string }, IDiscussionPageState> = {
     const otherTopics = {};
     const featuredTopicIds = app.community?.meta?.featuredTopics || app.chain?.meta?.chain?.featuredTopics;
 
-    const getTopicRow = (topicId, name, description) => m('.discussions-topic', {
-      key: topicId,
-      class: (m.route.get() === `/${app.activeId()}/discussions/${encodeURI(name.toString().trim())}`
-              || (topic && topic === id)) ? 'active' : '',
+    const getTopicRow = (key, name, description) => m('.discussions-topic', {
+      key,
+      class: topic === key ? 'active' : '',
       onclick: (e) => {
         e.preventDefault();
         m.route.set(`/${app.activeId()}/discussions/${name}`);
@@ -302,38 +342,35 @@ const DiscussionsPage: m.Component<{ topic?: string }, IDiscussionPageState> = {
       m('.proposal-topic-icon'),
       m('.proposal-topic-name', name),
     ]);
-    const allTopicsListItem = m('.discussions-topic', {
-      class: (m.route.get() === `/${app.activeId()}` || !topic) ? 'active' : '',
+    const allTopicsListItem = m('.discussions-all-topic', {
+      // class: !topic ? 'active' : '',
       onclick: (e) => {
         e.preventDefault();
         m.route.set(`/${app.activeId()}`);
       },
-    }, [
-      m('.proposal-topic-icon'),
-      m('.proposal-topic-name', 'All Discussions'),
-    ]);
+    }, 'Topics:');
 
-    app.topics.getByCommunity(app.activeId()).forEach((topic) => {
-      const { id, name, description } = topic;
-      if (featuredTopicIds.includes(`${topic.id}`)) {
-        featuredTopics[topic.name] = { id, name, description, featured_order: featuredTopicIds.indexOf(`${id}`) };
+    app.topics.getByCommunity(app.activeId()).forEach((t) => {
+      const { name, description } = t;
+      if (featuredTopicIds.includes(`${t.id}`)) {
+        featuredTopics[t.name] = { id: t.id, name, description, featured_order: featuredTopicIds.indexOf(`${t.id}`) };
       } else {
-        otherTopics[topic.name] = { id, name, description };
+        otherTopics[t.name] = { id: t.id, name, description };
       }
     });
     const otherTopicListItems = Object.keys(otherTopics)
       .sort((a, b) => otherTopics[a].name.localeCompare(otherTopics[b].name))
-      .map((name, idx) => getTopicRow(otherTopics[name].id, name, otherTopics[name].description));
+      .map((name, idx) => getTopicRow(otherTopics[name].name, name, otherTopics[name].description));
     const featuredTopicListItems = Object.keys(featuredTopics)
       .sort((a, b) => Number(featuredTopics[a].featured_order) - Number(featuredTopics[b].featured_order))
-      .map((name, idx) => getTopicRow(featuredTopics[name].id, name, featuredTopics[name].description));
+      .map((name, idx) => getTopicRow(featuredTopics[name].name, name, featuredTopics[name].description));
 
 
     return m(Sublayout, {
       class: 'DiscussionsPage',
       title: topic ? [
         topic,
-        m.route.get() === `/${app.activeId()}/discussions/${encodeURI(topicName)}`
+        m.route.get().startsWith(`/${app.activeId()}/discussions/${encodeURI(topicName)}`)
           && app.user.isAdminOfEntity({ chain: app.activeChainId(), community: app.activeCommunityId() })
           && m(PopoverMenu, {
             class: 'sidebar-edit-topic',
@@ -341,10 +378,7 @@ const DiscussionsPage: m.Component<{ topic?: string }, IDiscussionPageState> = {
             transitionDuration: 0,
             hoverCloseDelay: 0,
             closeOnContentClick: true,
-            trigger: m(Icon, {
-              name: Icons.CHEVRON_DOWN,
-              style: 'margin-left: 6px;',
-            }),
+            trigger: [ ' ', m(Icon, { name: Icons.CHEVRON_DOWN }) ] as any,
             content: m(MenuItem, {
               label: 'Edit topic',
               onclick: (e) => {
@@ -402,6 +436,7 @@ const DiscussionsPage: m.Component<{ topic?: string }, IDiscussionPageState> = {
             featuredTopicListItems,
             otherTopicListItems,
           ]),
+          m(DiscussionStagesBar, { topic: topicName, stage }),
           (!activeEntity || !activeEntity.serverLoaded || stillFetching)
             ? m('.discussions-main', [
               m(ProposalsLoadingRow),

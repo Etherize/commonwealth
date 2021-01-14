@@ -5,7 +5,7 @@ import m from 'mithril';
 import $ from 'jquery';
 
 import app from 'state';
-import { ProposalStore, TopicScopedThreadStore } from 'stores';
+import { ProposalStore, FilterScopedThreadStore } from 'stores';
 import { OffchainThread, OffchainAttachment, CommunityInfo, NodeInfo, OffchainTopic } from 'models';
 
 import { notifyError } from 'controllers/app/notifications';
@@ -28,6 +28,7 @@ export const modelFromServer = (thread) => {
     moment(thread.created_at),
     thread.topic,
     thread.kind,
+    thread.stage,
     thread.version_history,
     thread.community,
     thread.chain,
@@ -44,7 +45,7 @@ export const modelFromServer = (thread) => {
 
 Threads are stored in two stores. One store, the listingStore, is responsible for all posts
 rendered in the forum/community discussions listing (pages/discussions/index.ts). It organizes
-threads first by community, then by topic or "subpage," using the const ALL_PROPOSALS_KEY to
+threads first by community, then by topic/stage or "subpage," using the const ALL_PROPOSALS_KEY to
 store non-topic-sorted threads for the main discussion listing. The relevant sub-store, for a
 given discussion listing, can be accessed via getStoreByCommunityAndTopic, again passing
 ALL_PROPOSALS_KEY for all proposals.
@@ -69,7 +70,7 @@ would break the listingStore's careful chronology.
 
 class ThreadsController {
   private _store = new ProposalStore<OffchainThread>();
-  private _listingStore = new TopicScopedThreadStore();
+  private _listingStore = new FilterScopedThreadStore();
 
   public get store() { return this._store; }
   public get listingStore() { return this._listingStore; }
@@ -92,6 +93,7 @@ class ThreadsController {
   public async create(
     address: string,
     kind: string,
+    stage: string,
     chainId: string,
     communityId: string,
     title: string,
@@ -117,6 +119,7 @@ class ThreadsController {
         'title': encodeURIComponent(title),
         'body': encodeURIComponent(body),
         'kind': kind,
+        'stage': stage,
         'versionHistory': versionHistory,
         'attachments[]': attachments,
         'mentions[]': mentions,
@@ -160,6 +163,7 @@ class ThreadsController {
       data: {
         'thread_id': proposal.id,
         'kind': proposal.kind,
+        'stage': proposal.stage,
         'body': encodeURIComponent(newBody),
         'title': newTitle,
         'version_history': versionHistory,
@@ -202,7 +206,7 @@ class ThreadsController {
     });
   }
 
-  public async setPrivacy(args: { threadId: number, readOnly: boolean, }) {
+  public async setPrivacy(args: { threadId: number, readOnly: boolean }) {
     return $.ajax({
       url: `${app.serverUrl()}/setPrivacy`,
       type: 'POST',
@@ -225,7 +229,7 @@ class ThreadsController {
     });
   }
 
-  public async pin(args: {proposal: OffchainThread, }) {
+  public async pin(args: { proposal: OffchainThread }) {
     return $.ajax({
       url: `${app.serverUrl()}/pinThread`,
       type: 'POST',
@@ -271,8 +275,9 @@ class ThreadsController {
     cutoffDate: moment.Moment,
     pageSize?: number,
     topicId?: OffchainTopic
+    stage?: string,
   }) : Promise<boolean> {
-    const { chainId, communityId, cutoffDate, topicId } = options;
+    const { chainId, communityId, cutoffDate, topicId, stage } = options;
     // pageSize can not exceed 50
     const pageSize = options.pageSize
       ? Math.min(options.pageSize, MAX_PAGE_SIZE)
@@ -284,6 +289,7 @@ class ThreadsController {
       page_size: pageSize,
     };
     if (topicId) params['topic_id'] = topicId;
+    if (stage) params['stage'] = stage;
     const response = await $.get(`${app.serverUrl()}/bulkThreads`, params);
     if (response.status !== 'Success') {
       throw new Error(`Unsuccessful refresh status: ${response.status}`);
@@ -296,7 +302,7 @@ class ThreadsController {
       }
       try {
         const storeOptions = {
-          allProposals: !topicId,
+          allProposals: !topicId && !stage,
           exclusive: true
         };
         this._store.add(modeledThread);
